@@ -6,7 +6,7 @@
 <title>ForumZ-FR — Accueil</title>
 <!-- ══════════════════════════════════════
      FORUMZ-FR v5 — Structure multi-fichiers
-     style.css inclus inline pour standalone
+     style.css inclus inline pour standalonee
      ══════════════════════════════════════ -->
 <style>
 :root{--bg:#D4D0C8;--border:#000080;--h1:#3A6BC4;--h2:#00005F;--text:#333;--gold:#FFD700;--danger:#CC0000;}
@@ -425,7 +425,7 @@ body.scanlines::after{opacity:1;}
 <div id="end-screen">
   <div id="end-text"></div>
   <button id="end-share-btn" onclick="shareViralLink()">👥 Faire vivre l'horreur à tes proches →</button>
-  <button id="end-restart" onclick="localStorage.removeItem('fz2_pseudo');location.reload();">↺ Recommencer</button>
+  <button id="end-restart" onclick="changePseudoAndRestart()">↺ Recommencer</button>
 </div>
 
 <!-- ══ POPUPS WINDOWS ══ -->
@@ -4252,6 +4252,124 @@ function shareViralLink(){
   const url=`${base}?pseudo=${encodeURIComponent(S?S.pseudo:'?')}`;
   if(navigator.share){navigator.share({title:'ForumZ-FR 2004',text:`${S.pseudo} t'invite sur ce vieux forum bizarre de 2004...`,url}).catch(()=>{});}
   else{navigator.clipboard.writeText(url).then(()=>alert('✅ Lien copié !\n'+url)).catch(()=>{const p=document.createElement('p');p.style.cssText='color:#FFD700;font-size:11px;font-family:Courier New;margin-top:16px;word-break:break-all;';p.textContent=url;const es=document.getElementById('end-screen');if(es)es.appendChild(p);});}
+}
+
+
+/* ─── CHANGER DE PSEUDO ─── */
+function changePseudo() {
+  if (FSTATE.ended) return;
+  // Overlay de changement de pseudo
+  const ov = document.getElementById('pseudo-overlay');
+  if (!ov) return;
+
+  // Reset le champ
+  const inp = document.getElementById('pseudo-input');
+  if (inp) { inp.value = FSTATE.pseudo || ''; inp.select(); }
+
+  // Changer le subtitle pour indiquer qu'on change
+  const sub = document.getElementById('pseudo-subtitle');
+  if (sub) sub.innerHTML = `Tu t'appelles <strong style="color:#CC0000;">${FSTATE.pseudo}</strong>. Veux-tu changer ?`;
+  const warn = document.getElementById('pseudo-warning');
+  if (warn) warn.innerHTML = `<em style="color:#888;">Ton nouveau pseudo sera visible dans tous tes messages.</em>`;
+  const btn = document.getElementById('pseudo-submit');
+  if (btn) btn.textContent = '✓ Confirmer le changement';
+
+  ov.style.display = 'flex';
+  ov.style.opacity = '1';
+
+  // Override du submit pour juste changer le pseudo sans recharger
+  if (btn) btn.onclick = applyPseudoChange;
+  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') applyPseudoChange(); if (e.key === 'Escape') closePseudoChange(); };
+
+  // Bouton annuler
+  let cancelBtn = document.getElementById('pseudo-cancel-btn');
+  if (!cancelBtn) {
+    cancelBtn = document.createElement('button');
+    cancelBtn.id = 'pseudo-cancel-btn';
+    cancelBtn.textContent = 'Annuler';
+    cancelBtn.style.cssText = 'margin-top:8px;background:none;border:1px solid #AAA;color:#666;padding:6px 18px;cursor:pointer;font-family:Arial;font-size:11px;width:100%;';
+    cancelBtn.onclick = closePseudoChange;
+    const box = document.getElementById('pseudo-box');
+    if (box) box.appendChild(cancelBtn);
+  }
+  cancelBtn.style.display = 'block';
+  if (inp) inp.focus();
+}
+
+function applyPseudoChange() {
+  const inp = document.getElementById('pseudo-input');
+  if (!inp) return;
+  const v = inp.value.trim();
+  if (!v || v === FSTATE.pseudo) { closePseudoChange(); return; }
+
+  const oldPseudo = FSTATE.pseudo;
+  FSTATE.pseudo = v;
+  localStorage.setItem('fz2_pseudo', v);
+
+  // Mettre à jour tous les endroits où le pseudo est affiché
+  const dp = document.getElementById('displayed-pseudo');
+  if (dp) dp.textContent = v;
+  const lm = document.getElementById('last-member');
+  if (lm) lm.textContent = v;
+
+  // Mettre à jour le profil
+  FSTATE.profil.msn = v.toLowerCase() + '@hotmail.fr';
+  FSTATE.profil.sig = '★ ' + v + ' ★ | ForumZ-FR 2004';
+  FSTATE.profil.location = FSTATE.loc;
+  buildProfilTable();
+
+  // Mettre à jour les membres en ligne (le pseudo en rouge)
+  const onlineList = document.getElementById('online-list');
+  if (onlineList) {
+    const you = onlineList.querySelector('span[style*="CC0000"]');
+    if (you) you.innerHTML = `<strong style="color:#CC0000;animation:blink 1s step-end infinite;">${v}</strong>`;
+  }
+
+  // Mettre à jour l'AV popup si ouvert
+  const avPath = document.getElementById('av-path');
+  if (avPath) avPath.textContent = `C:\\Users\\${v}\\AppData\\Roaming\\ForumZ\\session.exe`;
+
+  // Mettre à jour le message de bienvenue
+  const hw = document.getElementById('home-welcome-msg');
+  if (hw && FSTATE.phase < 2) hw.innerHTML = T.home_welcome(v, getTimeStr(), FSTATE.loc);
+
+  // MSN : Admin réagit au changement de pseudo (phase 2+)
+  if (FSTATE.phase >= 2 && FSTATE.msnOpen) {
+    setTimeout(() => adminSay(`${oldPseudo}... maintenant tu t'appelles ${v} ? je me souviens des deux.`), 1500);
+  } else if (FSTATE.phase >= 2) {
+    showToast(`Admin_666 a noté ton nouveau pseudo : ${v}`, '#550000');
+  }
+
+  closePseudoChange();
+}
+
+function closePseudoChange() {
+  const ov = document.getElementById('pseudo-overlay');
+  if (!ov) return;
+  ov.classList.add('out');
+  setTimeout(() => {
+    ov.style.display = 'none';
+    ov.classList.remove('out');
+    // Remettre les valeurs par défaut pour la prochaine fois
+    const sub = document.getElementById('pseudo-subtitle');
+    if (sub) sub.innerHTML = T.pseudo_subtitle;
+    const warn = document.getElementById('pseudo-warning');
+    if (warn) warn.innerHTML = T.pseudo_warning;
+    const btn = document.getElementById('pseudo-submit');
+    if (btn) { btn.textContent = T.pseudo_btn; btn.onclick = null; }
+    const inp = document.getElementById('pseudo-input');
+    if (inp) { inp.value = ''; inp.onkeydown = null; }
+    const cancelBtn = document.getElementById('pseudo-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    // Réinitialiser le submit original
+    showPseudoPrompt._rebind && showPseudoPrompt._rebind();
+  }, 500);
+}
+
+function changePseudoAndRestart() {
+  // Effacer le pseudo sauvegardé et recharger = retour à l'écran de choix de pseudo
+  localStorage.removeItem('fz2_pseudo');
+  location.reload();
 }
 
 /* ─── BOOTSTRAP ─── */
